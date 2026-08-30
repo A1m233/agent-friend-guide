@@ -8,6 +8,12 @@ agent-friend 的会话、记忆、人格和其他用户资产默认保存在系�
 - macOS：`~/Library/Application Support/agent-friend/`
 - Linux：`$XDG_DATA_HOME/agent-friend/`，未设置时通常是 `~/.local/share/agent-friend/`
 
+桌宠模型也属于用户资产，统一放在用户数据目录的 `avatar-models/` 下：
+
+- 用户导入的 Spine 3.8 模型目录是 `<用户数据目录>/avatar-models/user/spine38/`；其中每个一级子目录代表一个模型。
+- Agent 需要为当前桌面实例安装模型时，优先在应用日志目录的 `tauri.log` 中查找最近一条 `avatar models: assets_dir="..."`，把该行给出的实际模型资源根目录追加 `user/spine38` 作为安装目标。日志只需在本机读取，不需要用户粘贴或公开整份文件。
+- 当前日志不存在、没有这条记录或无法读取时，再请用户前往“设置 → 桌宠 → 打开 Spine 3.8 模型目录”，从文件管理器地址栏复制完整路径。不要只根据用户名或系统默认目录猜测当前实例的实际路径。
+
 Windows 日志默认位于 `%LOCALAPPDATA%/agent-friend/Logs/`。不要在应用运行时手工移动或修改数据文件；迁移电脑时使用设置页的迁移功能。
 
 普通本地命令可以使用当前会话自己的受管命令目录。该目录会在同一会话的后续任务中保留；归档会话不会删除它，永久删除会话或清空对应归档会话时会一并删除。

@@ -22,7 +22,7 @@ scripts/ark-models.py search --query "<角色或时装>" --ref main
 
 ## 安装前确认
 
-1. 请用户打开“设置 → 桌宠 → 打开 Spine 3.8 模型目录”。如果 Agent 还没有该目录的准确绝对路径，请用户从文件管理器地址栏复制；不要猜 `%APPDATA%`、用户目录或安装渠道对应的内部路径。
+1. 按[数据与隐私中的“本地数据位置”](data-and-privacy.md#本地数据位置)解析当前实例的用户 Spine 3.8 模型目录。Agent 应先从本机 `tauri.log` 的最新 `avatar models: assets_dir="..."` 记录取得实际模型资源根目录，再追加 `user/spine38`；能够自行解析时不要让用户复制路径。只有日志不可用或没有该记录时，才请用户前往“设置 → 桌宠 → 打开 Spine 3.8 模型目录”，从文件管理器地址栏复制完整路径。
 2. 在执行前说明：模型名称与时装、Ark-Models 目录标识、精确来源 commit、将创建的目标文件夹，以及“只作本地非商用使用”的限制。
 3. 用户明确同意后才运行安装。普通文件与联网授权仍由 agent-friend 的授权流程处理，Skill 本身不扩大权限。
 
@@ -31,7 +31,7 @@ scripts/ark-models.py search --query "<角色或时装>" --ref main
 使用用户选定的目录标识、搜索得到的精确 commit 和受管目录：
 
 ```text
-scripts/ark-models.py install --slug "<Ark-Models 目录标识>" --ref "<resolvedCommit>" --models-dir "<打开 Spine 3.8 模型目录得到的绝对路径>" --acknowledge-noncommercial
+scripts/ark-models.py install --slug "<Ark-Models 目录标识>" --ref "<resolvedCommit>" --models-dir "<按 data-and-privacy.md 解析的用户 Spine 3.8 模型目录>" --acknowledge-noncommercial
 ```
 
 需要先查看将创建什么而不写文件时，加 `--dry-run`；dry-run 不代表模型文件已经通过校验。脚本会：
