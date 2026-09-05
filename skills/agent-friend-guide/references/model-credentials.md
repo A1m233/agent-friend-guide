@@ -1,14 +1,12 @@
 # 模型凭据
 
-agent-friend 当前提供 DeepSeek、Kimi 与 OpenRouter 三个模型调用渠道。使用某个渠道前，需要配置对应的 API Key，并确保账号有可用额度。
-
-OpenRouter 是调用渠道；模型名称前的 Google 或 OpenAI 表示模型作者，不代表 agent-friend 会使用对应厂商的直连 API Key。
+agent-friend 当前开放 DeepSeek 与 Kimi 两个模型调用渠道。使用某个渠道前，需要配置对应的 API Key，并确保账号有可用额度。OpenRouter 暂不维护，模型选择与凭据设置入口已隐藏。
 
 初始默认对话模型是 Kimi 2.5，初始默认记忆模型是 DeepSeek Flash。已经在设置中主动选择过模型时，升级不会覆盖已有选择。
 
 “新对话默认模型”只决定之后新建对话草稿的初始模型。修改并保存时不会重启服务，也不会改变当前会话或已经打开但尚未发送的草稿；当前会话可以在输入区单独切换模型。
 
-保存或更换 DeepSeek、Kimi、OpenRouter API Key 时，agent-friend 会先在线校验候选 Key，但不会生成模型回答。校验成功后才替换原配置，并自动应用到对话服务；明确校验失败时会保留原配置并显示失败原因。如果网络或渠道服务暂时不可用，页面会让你选择稍后重试，或确认“仍然保存”。确认保存的 Key 会显示“已配置”，可以之后点击“校验当前凭据”；校验成功时显示“已配置 · 已验证”。
+保存或更换 DeepSeek、Kimi API Key 时，agent-friend 会先在线校验候选 Key，但不会生成模型回答。校验成功后才替换原配置，并自动应用到对话服务；明确校验失败时会保留原配置并显示失败原因。如果网络或渠道服务暂时不可用，页面会让你选择稍后重试，或确认“仍然保存”。确认保存的 Key 会显示“已配置”，可以之后点击“校验当前凭据”；校验成功时显示“已配置 · 已验证”。
 
 ## DeepSeek API Key
 
@@ -40,29 +38,15 @@ agent-friend 当前提供以下 DeepSeek 模型：
 
 `platform.kimi.ai` 与其他 Kimi 平台的 Key 不一定通用，应从上面的开放平台创建。官方文档：[Kimi API 概览](https://platform.kimi.ai/docs/api/overview)。
 
+Kimi K3（模型列表显示为 `kimi-k3`）支持文本对话和工具调用；当前会话可选择“低 / 高 / 最高”推理强度，默认“最高”，不提供关闭档位，暂不支持在 agent-friend 中添加附件。新增 K3 不会改变原有默认模型。
+
 Kimi 2.6 与 Kimi 2.5 支持在当前会话关闭或开启推理，默认开启；Kimi 2.7 Code 与 Kimi 2.7 Code Highspeed 固定开启推理，不提供关闭或强度档位。
 
-## OpenRouter API Key
+## OpenRouter 暂不维护
 
-1. 登录 [OpenRouter](https://openrouter.ai/)。
-2. 如需使用付费模型，先在 [Credits](https://openrouter.ai/settings/credits) 页面购买额度。OpenRouter 官方列出的支付方式包括主流银行卡、支付宝（AliPay）和 USDC。
-3. 打开 [API Keys](https://openrouter.ai/settings/keys) 并创建一枚 Key。
-4. 保存页面展示的完整值。
-5. 在 agent-friend 打开“设置 → 模型与凭据 → OpenRouter 凭据”，粘贴并保存。
-6. 等待页面完成校验和应用。显示“已配置 · 已验证”后即可选择 OpenRouter 模型。
+OpenRouter 模型和凭据设置不再向用户开放。隐藏入口不会主动删除以前保存的设置或凭据，也不会自动把旧会话切换到另一模型；这不代表旧渠道仍获得维护或保证可用。需要继续使用时，建议在当前会话和“新对话默认模型”中选择已配置的 DeepSeek 或 Kimi，不要为 agent-friend 新购 OpenRouter 额度。
 
-如果当前页面标题是“Add a payment method”，且只显示银行卡、银行、加密货币等选项，你可能进入了保存支付方式或自动充值的配置流程。要使用支付宝，可返回 Credits 页面发起手动购买，在结账页展开“更多支付方式”（如果页面提供）；不要为了显示某种支付方式填写虚假的国家或账单信息。实际展示方式可能随账户、地区和支付渠道变化。如果按真实信息结账时仍没有支付宝，请联系 [OpenRouter 账单支持](mailto:support@openrouter.ai)。
-
-agent-friend 当前只开放以下两个 OpenRouter 模型：
-
-- Google · Gemini 3.7 Flash；
-- OpenAI · GPT-5.6 Luna。
-
-Google · Gemini 3.7 Flash 支持“低 / 中 / 高”，默认“中”；OpenAI · GPT-5.6 Luna 支持“关闭 / 低 / 中 / 高 / 极高 / 最高”，默认“中”。这些档位只影响当前会话，从下一条回复开始生效。
-
-这两款模型当前支持文本对话和工具调用，不支持在 agent-friend 中添加图片、文件、音频或视频。请求会要求使用不进行数据收集的上游端点；如果当前没有满足条件的端点，agent-friend 会明确提示模型路由不可用，不会静默切换到另一模型或放宽该限制。
-
-官方文档：[OpenRouter API Key](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key)、[OpenRouter FAQ：Credits 与支付方式](https://openrouter.ai/docs/faq#credit-and-billing-systems)。
+如果已安装版本的模型列表与本文不同，以实际界面为准；旧版本可能没有 K3，或仍显示 OpenRouter 入口。
 
 ## 安全建议
 
