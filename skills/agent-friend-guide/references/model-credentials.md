@@ -2,7 +2,7 @@
 
 agent-friend 提供 DeepSeek、Kimi 内置渠道，以及支持 OpenAI 兼容接口的自定义连接。使用某个渠道前，需要配置对应的 API Key，并确保账号有可用额度。OpenRouter 暂不维护，模型选择与凭据设置入口已隐藏。
 
-初始默认对话模型是 Kimi 2.5，初始默认记忆模型是 DeepSeek Flash。已经在设置中主动选择过模型时，升级不会覆盖已有选择。
+初始默认对话模型是 DeepSeek Flash，思考默认关闭；初始默认记忆模型也是 DeepSeek Flash，使用“最高”思考强度。已经在设置中主动选择过模型时，升级不会覆盖已有选择。
 
 “默认对话模型”只决定之后新建对话草稿的初始模型。修改并保存时不会重启服务，也不会改变当前会话或已经打开但尚未发送的草稿；当前会话可以在输入区单独切换模型。
 
@@ -18,13 +18,14 @@ agent-friend 提供 DeepSeek、Kimi 内置渠道，以及支持 OpenAI 兼容接
 
 agent-friend 当前提供以下 DeepSeek 模型：
 
-- DeepSeek V4 Flash：文本对话和工具调用；
-- DeepSeek V4 Pro：文本对话和工具调用；
-- DeepSeek V4 Flash Vision：文本、工具调用以及 JPEG、PNG、WebP 图片。
+- DeepSeek Flash：文本、工具调用以及 JPEG、PNG、WebP 图片；
+- DeepSeek V4 Pro：文本对话和工具调用。
 
-这三款模型都可在当前会话选择“关闭 / 低 / 高 / 最高”推理强度，默认关闭。切换模型时会先采用目标模型的默认档位，之后可以继续调整。
+这两款模型都可在当前会话选择“关闭 / 低 / 高 / 最高”推理强度，默认关闭。切换模型时会先采用目标模型的默认档位，之后可以继续调整。
 
-只有 DeepSeek V4 Flash Vision 可以添加图片。它不接受 PDF、TXT、GIF 或其它文件类型；单张图片最多 64 MiB，单轮最多 10 张且总计不超过 100 MiB。V4 Flash 与 V4 Pro 仍是纯文本模型。
+DeepSeek Flash 可以添加图片。它不接受 PDF、TXT、GIF 或其它文件类型；单张图片最多 64 MiB，单轮最多 10 张且总计不超过 100 MiB。V4 Pro 仍是纯文本模型。
+
+旧的 V4 Flash 与 V4 Flash Vision 已从可选列表移除。已有默认设置和历史会话保留原来的选择，不会自动迁移；继续使用旧型号时会报模型不可用。请在对应默认设置或当前会话中手动选择 DeepSeek Flash，再继续使用。自定义连接中的同名模型不受内置型号移除影响。较早安装版本的型号和初始默认值可能不同，以实际界面为准。
 
 官方文档：[DeepSeek API 文档](https://api-docs.deepseek.com/zh-cn/)。
 
