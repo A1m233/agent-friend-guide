@@ -4,12 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
+import http.client
 import json
 import re
 import shutil
+import socket
+import ssl
 import sys
 import tempfile
+import time
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -27,6 +32,8 @@ USER_AGENT = "agent-friend-guide/ark-models-installer"
 MAX_METADATA_BYTES = 20 * 1024 * 1024
 MAX_FILE_BYTES = 128 * 1024 * 1024
 MAX_MODEL_BYTES = 256 * 1024 * 1024
+MAX_CONTENTS_BYTES = 100_000_000
+MAX_REQUEST_ATTEMPTS = 3
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 WINDOWS_RESERVED = {
     "CON",
@@ -39,52 +46,171 @@ WINDOWS_RESERVED = {
 
 
 class InstallerError(RuntimeError):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
         super().__init__(message)
         self.code = code
+        self.retryable = retryable
 
 
-def _request_bytes(url: str, *, limit: int) -> bytes:
+def _http_error(exc: urllib.error.HTTPError) -> InstallerError:
+    headers = exc.headers or {}
+    message = ""
+    if exc.code == 403:
+        try:
+            payload = json.loads(exc.read(64 * 1024))
+            if isinstance(payload, dict):
+                message = str(payload.get("message", "")).lower()
+        except (OSError, ValueError, http.client.HTTPException):
+            pass
+    limited = exc.code == 429 or (
+        exc.code == 403
+        and (
+            headers.get("X-RateLimit-Remaining") == "0"
+            or headers.get("Retry-After") is not None
+            or "rate limit" in message
+            or "abuse detection" in message
+        )
+    )
+    if limited:
+        detail = "GitHub request limit reached; retry later"
+        retry_after = headers.get("Retry-After", "")
+        reset = headers.get("X-RateLimit-Reset", "")
+        if retry_after.isdigit():
+            detail += f" (Retry-After: {retry_after} seconds)"
+        if reset.isdigit():
+            detail += f" (X-RateLimit-Reset: {reset} Unix seconds)"
+        return InstallerError("github_rate_limited", detail)
+    if exc.code == 404:
+        return InstallerError(
+            "not_found", "GitHub file or ref was not found at the requested revision"
+        )
+    return InstallerError("http_error", f"GitHub returned HTTP {exc.code}")
+
+
+def _transient_network_error(exc: BaseException) -> bool:
+    if isinstance(exc, urllib.error.URLError):
+        return isinstance(exc.reason, BaseException) and _transient_network_error(exc.reason)
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return False
+    if isinstance(
+        exc,
+        (
+            TimeoutError,
+            ConnectionError,
+            ssl.SSLEOFError,
+            http.client.RemoteDisconnected,
+            http.client.IncompleteRead,
+        ),
+    ):
+        return True
+    if isinstance(exc, socket.gaierror):
+        return exc.errno == socket.EAI_AGAIN
+    return isinstance(exc, OSError) and exc.errno in {
+        errno.ECONNRESET,
+        errno.ECONNABORTED,
+        errno.ETIMEDOUT,
+        errno.EPIPE,
+    }
+
+
+def _request_once(url: str, *, limit: int, raw_media: bool) -> bytes:
     request = urllib.request.Request(
         url,
         headers={
-            "Accept": "application/vnd.github+json",
+            "Accept": "application/vnd.github.raw+json"
+            if raw_media
+            else "application/vnd.github+json",
             "User-Agent": USER_AGENT,
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
-    try:
-        with urllib.request.urlopen(request, timeout=45) as response:
-            declared = response.headers.get("Content-Length")
-            if declared and int(declared) > limit:
+    with urllib.request.urlopen(request, timeout=45) as response:
+        if raw_media:
+            content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            media_parts = {
+                part.strip().lower()
+                for part in response.headers.get("X-GitHub-Media-Type", "").split(";")
+            }
+            if (
+                content_type
+                not in {
+                    "application/vnd.github.raw",
+                    "application/vnd.github.raw+json",
+                    "application/vnd.github.v3.raw",
+                    "application/vnd.github.v3.raw+json",
+                }
+                and "format=raw" not in media_parts
+            ):
+                raise InstallerError(
+                    "invalid_response", "GitHub Contents API did not return raw file bytes"
+                )
+        declared = response.headers.get("Content-Length")
+        expected = None
+        if declared is not None:
+            if not declared.isascii() or not declared.isdigit():
+                raise InstallerError(
+                    "invalid_response", "GitHub returned an invalid Content-Length"
+                )
+            expected = int(declared)
+            if expected > limit:
                 raise InstallerError("download_too_large", f"download exceeds {limit} bytes")
-            chunks: list[bytes] = []
-            size = 0
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > limit:
-                    raise InstallerError("download_too_large", f"download exceeds {limit} bytes")
-                chunks.append(chunk)
-            return b"".join(chunks)
-    except InstallerError:
-        raise
-    except urllib.error.HTTPError as exc:
-        if exc.code == 403 and exc.headers.get("X-RateLimit-Remaining") == "0":
-            raise InstallerError(
-                "github_rate_limited",
-                "GitHub request limit reached; retry later",
-            ) from exc
-        raise InstallerError("http_error", f"GitHub returned HTTP {exc.code}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-        raise InstallerError("network_error", f"GitHub request failed: {exc}") from exc
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            chunk = response.read(min(1024 * 1024, limit - size + 1))
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > limit:
+                raise InstallerError("download_too_large", f"download exceeds {limit} bytes")
+            chunks.append(chunk)
+        if expected is not None and size < expected:
+            raise http.client.IncompleteRead(b"", expected - size)
+        if expected is not None and size > expected:
+            raise InstallerError("invalid_response", "GitHub response exceeds its Content-Length")
+        return b"".join(chunks)
 
 
-def _request_json(url: str, *, limit: int = MAX_METADATA_BYTES) -> dict[str, Any]:
+def _request_bytes(url: str, *, limit: int, raw_media: bool = False) -> bytes:
+    for attempt in range(MAX_REQUEST_ATTEMPTS):
+        try:
+            return _request_once(url, limit=limit, raw_media=raw_media)
+        except urllib.error.HTTPError as exc:
+            try:
+                error = _http_error(exc)
+            finally:
+                exc.close()
+            raise error from exc
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
+            retryable = _transient_network_error(exc)
+            if not retryable or attempt == MAX_REQUEST_ATTEMPTS - 1:
+                raise InstallerError(
+                    "network_error",
+                    f"GitHub request failed: {exc}",
+                    retryable=retryable,
+                ) from exc
+            time.sleep(2**attempt)
+    raise AssertionError("request attempt limit must be positive")
+
+
+def _request_file(commit: str, relative: PurePosixPath, *, limit: int) -> bytes:
+    if not COMMIT_RE.fullmatch(commit):
+        raise InstallerError("invalid_commit", "file downloads require a full commit SHA")
+    relative = _safe_relative_path(relative.as_posix())
+    encoded = "/".join(urllib.parse.quote(part, safe="") for part in relative.parts)
     try:
-        value = json.loads(_request_bytes(url, limit=limit).decode("utf-8"))
+        return _request_bytes(f"{RAW_ROOT}/{commit}/{encoded}", limit=limit)
+    except InstallerError as exc:
+        if exc.code != "network_error" or not exc.retryable:
+            raise
+    # Stay on the same repository/revision, and read bytes rather than download_url.
+    url = f"{API_ROOT}/contents/{encoded}?ref={commit}"
+    return _request_bytes(url, limit=min(limit, MAX_CONTENTS_BYTES), raw_media=True)
+
+
+def _decode_json(raw: bytes) -> dict[str, Any]:
+    try:
+        value = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise InstallerError("invalid_upstream_json", "GitHub returned invalid JSON") from exc
     if not isinstance(value, dict):
@@ -92,7 +218,13 @@ def _request_json(url: str, *, limit: int = MAX_METADATA_BYTES) -> dict[str, Any
     return value
 
 
+def _request_json(url: str, *, limit: int = MAX_METADATA_BYTES) -> dict[str, Any]:
+    return _decode_json(_request_bytes(url, limit=limit))
+
+
 def resolve_commit(ref: str) -> str:
+    if COMMIT_RE.fullmatch(ref.lower()):
+        return ref.lower()
     encoded = urllib.parse.quote(ref, safe="")
     payload = _request_json(f"{API_ROOT}/commits/{encoded}")
     commit = payload.get("sha")
@@ -102,8 +234,8 @@ def resolve_commit(ref: str) -> str:
 
 
 def load_catalog(commit: str) -> dict[str, Any]:
-    url = f"{RAW_ROOT}/{commit}/models_data.json"
-    return _request_json(url)
+    raw = _request_file(commit, PurePosixPath("models_data.json"), limit=MAX_METADATA_BYTES)
+    return _decode_json(raw)
 
 
 def _operator_records(catalog: dict[str, Any]) -> list[dict[str, Any]]:
@@ -191,12 +323,6 @@ def _safe_relative_path(value: str) -> PurePosixPath:
     if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
         raise InstallerError("unsafe_upstream_path", f"unsafe upstream path: {value}")
     return path
-
-
-def _raw_url(commit: str, slug: str, relative: PurePosixPath) -> str:
-    parts = ["models", slug, *relative.parts]
-    encoded = "/".join(urllib.parse.quote(part, safe="") for part in parts)
-    return f"{RAW_ROOT}/{commit}/{encoded}"
 
 
 def atlas_texture_pages(raw: bytes) -> list[PurePosixPath]:
@@ -297,10 +423,12 @@ def download_model(
     if skeleton_rel.stem != atlas_rel.stem:
         raise InstallerError("incomplete_model", "skeleton and atlas do not have the same stem")
 
-    atlas_bytes = _request_bytes(_raw_url(commit, record["slug"], atlas_rel), limit=MAX_FILE_BYTES)
+    model_path = PurePosixPath("models") / record["slug"]
+    atlas_bytes = _request_file(commit, model_path / atlas_rel, limit=MAX_FILE_BYTES)
     pages = atlas_texture_pages(atlas_bytes)
-    skeleton_bytes = _request_bytes(
-        _raw_url(commit, record["slug"], skeleton_rel),
+    skeleton_bytes = _request_file(
+        commit,
+        model_path / skeleton_rel,
         limit=MAX_FILE_BYTES,
     )
     version = spine_version(skeleton_bytes)
@@ -311,8 +439,9 @@ def download_model(
     total = len(atlas_bytes) + len(skeleton_bytes)
     for page in pages:
         texture_rel = atlas_rel.parent / page
-        data = _request_bytes(
-            _raw_url(commit, record["slug"], texture_rel),
+        data = _request_file(
+            commit,
+            model_path / texture_rel,
             limit=MAX_FILE_BYTES,
         )
         total += len(data)
